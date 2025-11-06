@@ -1,2 +1,1 @@
-# AI-NMMS_photo_of_photo
-Deep Learning CNN- based photo of photo detection model
+# MARKETPLACE_nmms_photo_of_photo

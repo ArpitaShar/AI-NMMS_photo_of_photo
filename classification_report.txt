@@ -1,0 +1,9 @@
+                precision    recall  f1-score   support
+
+          SNAP       0.00      0.00      0.00    8532.0
+not_recaptured       0.00      0.00      0.00       0.0
+    recaptured       0.00      0.00      0.00       0.0
+
+      accuracy                           0.00    8532.0
+     macro avg       0.00      0.00      0.00    8532.0
+  weighted avg       0.00      0.00      0.00    8532.0

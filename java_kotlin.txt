@@ -1,0 +1,96 @@
+package com.nic.nmms.ui.camera
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.util.Log
+import com.nic.nmms.ml.MobileTest
+import org.tensorflow.lite.DataType
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.exp
+
+class Classifier(context: Context) {
+
+    private val model: MobileTest
+    private val threshold = 0.85f
+    private val labels = listOf("not_recaptured", "recaptured")
+
+    init {
+        model = MobileTest.newInstance(context)
+    }
+
+    /**
+     * Predicts on a given Bitmap image.
+     * Returns: Triple(flag, probability of recaptured, predicted label)
+     */
+    fun predict(bitmap: Bitmap): Triple<Int, Float, String> {
+        try {
+            val inputTensor = preprocessToNHWC(bitmap)
+            val outputs = model.process(inputTensor)
+
+            var probabilities = outputs.outputFeature0AsTensorBuffer.floatArray
+
+            // Optional: Apply softmax if the model does not include it
+            probabilities = softmax(probabilities)
+
+            val recapturedProb = probabilities.getOrElse(1) { 0f }
+            val flag = if (recapturedProb >= threshold) 1 else 0
+
+            val predictedIndex = probabilities.indices.maxByOrNull { probabilities[it] } ?: -1
+            val predictedLabel = if (predictedIndex in labels.indices) labels[predictedIndex] else "Unknown"
+
+            return Triple(flag, recapturedProb, predictedLabel)
+
+        } catch (e: Exception) {
+            Log.e("Classifier", "Prediction error: ${e.message}", e)
+            return Triple(0, 0.0f, "Error")
+        }
+    }
+
+    /**
+     * Preprocesses the bitmap to NHWC TensorBuffer (1, 256, 256, 3)
+     */
+    private fun preprocessToNHWC(bitmap: Bitmap): TensorBuffer {
+        val inputShape = intArrayOf(1, 256, 256, 3)
+        val byteBuffer = ByteBuffer.allocateDirect(1 * 256 * 256 * 3 * 4)
+        byteBuffer.order(ByteOrder.nativeOrder())
+
+        val resized = Bitmap.createScaledBitmap(bitmap, 256, 256, true)
+        val intValues = IntArray(256 * 256)
+        resized.getPixels(intValues, 0, 256, 0, 0, 256, 256)
+
+        val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
+        val std = floatArrayOf(0.229f, 0.224f, 0.225f)
+
+        for (y in 0 until 256) {
+            for (x in 0 until 256) {
+                val pixel = intValues[y * 256 + x]
+                val r = ((pixel shr 16) and 0xFF) / 255f
+                val g = ((pixel shr 8) and 0xFF) / 255f
+                val b = (pixel and 0xFF) / 255f
+
+                byteBuffer.putFloat((r - mean[0]) / std[0])
+                byteBuffer.putFloat((g - mean[1]) / std[1])
+                byteBuffer.putFloat((b - mean[2]) / std[2])
+            }
+        }
+
+        val inputTensor = TensorBuffer.createFixedSize(inputShape, DataType.FLOAT32)
+        inputTensor.loadBuffer(byteBuffer)
+        return inputTensor
+    }
+
+    /**
+     * Applies softmax to logits if required
+     */
+    private fun softmax(logits: FloatArray): FloatArray {
+        val expValues = logits.map { exp(it.toDouble()) }
+        val sum = expValues.sum()
+        return expValues.map { (it / sum).toFloat() }.toFloatArray()
+    }
+
+    fun close() {
+        model.close()
+    }
+}
